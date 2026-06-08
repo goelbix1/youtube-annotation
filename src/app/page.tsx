@@ -1,17 +1,35 @@
 "use client";
-
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function Home() {
   const [videoUrl, setVideoUrl] = useState("");
   const [videoId, setVideoId] = useState("");
-
+  const router = useRouter();
+  
   const handleCheckRating = () => {
-  const extractedVideoId =
-    new URL(videoUrl).searchParams.get("v") || "";
+  if (!videoUrl.trim()) {
+    return;
+  }
 
-  setVideoId(extractedVideoId);
+  try {
+    const extractedVideoId =
+      new URL(videoUrl).searchParams.get("v") || "";
+
+    if (!extractedVideoId) {
+      alert("Could not find a YouTube video ID");
+      return;
+    }
+
+    setVideoId(extractedVideoId);
+    router.push(`/rating/${extractedVideoId}`);
+  } catch {
+    alert("Please enter a valid YouTube URL");
+  }
   };
+  
+  
+  
   
 
   return (
