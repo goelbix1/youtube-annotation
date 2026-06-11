@@ -2,12 +2,18 @@
 
 import { use, useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
 type VideoData = {
   estimated_rating?: string;
   confidence_score?: number;
   title?: string;
+};
+
+type Annotation = {
+  category: string;
+  timestamp_seconds: number;
+  video_id: string;
 };
 
 export default function RatingPage({
@@ -19,21 +25,34 @@ export default function RatingPage({
 
   const [loading, setLoading] = useState(true);
   const [videoData, setVideoData] = useState<VideoData | null>(null);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
 
   useEffect(() => {
     async function loadVideo() {
       try {
-        const videoRef = doc(db, "videos", videoId);
-        const videoSnap = await getDoc(videoRef);
+        const videoRef = collection(db, "videos");
+        const videoQuery = query(videoRef, where("__name__", "==", videoId));
+        const videoSnap = await getDocs(videoQuery);
 
-        if (videoSnap.exists()) {
-          setVideoData(videoSnap.data() as VideoData);
+        if (!videoSnap.empty) {
+          const data = videoSnap.docs[0].data() as VideoData;
+          setVideoData(data);
         } else {
           setVideoData(null);
         }
+
+       const annotationsRef = collection(db, "annotations");
+       const annotationsSnap = await getDocs(annotationsRef);
+
+       const items = annotationsSnap.docs
+        .map((doc) => doc.data() as Annotation)
+        .filter((annotation) => annotation.video_id === videoId);
+
+      setAnnotations(items);
       } catch (error) {
-        console.error("Failed to load video:", error);
+        console.error("Failed to load page data:", error);
         setVideoData(null);
+        setAnnotations([]);
       } finally {
         setLoading(false);
       }
@@ -54,7 +73,18 @@ export default function RatingPage({
 
   const rating = videoData?.estimated_rating ?? "Unrated";
   const confidence = videoData?.confidence_score;
+  
+function formatTimestamp(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
 
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+  
+ 
   return (
     <main className="min-h-screen bg-white px-6 py-16">
       <div className="mx-auto max-w-4xl space-y-8">
@@ -64,14 +94,16 @@ export default function RatingPage({
             {videoData ? "Community Video Rating" : "No Rating Yet"}
           </h1>
         </header>
-      <div className="aspect-video overflow-hidden rounded-3xl border border-slate-200">
-        <iframe
-          className="h-full w-full"
-          src={`https://www.youtube.com/embed/${videoId}`}
-          title="YouTube video player"
-          allowFullScreen
-        />
-      </div>
+
+        <div className="aspect-video overflow-hidden rounded-3xl border border-slate-200">
+          <iframe
+            className="h-full w-full"
+            src={`https://www.youtube.com/embed/${videoId}`}
+            title="YouTube video player"
+            allowFullScreen
+          />
+        </div>
+
         {videoData ? (
           <section className="grid gap-6 rounded-3xl border border-slate-200 bg-slate-50 p-6 md:grid-cols-3">
             <div className="md:col-span-1">
@@ -113,18 +145,32 @@ export default function RatingPage({
           </section>
         )}
 
-        {videoData && (
-          <section className="rounded-3xl border border-slate-200 p-6">
-            <h2 className="text-xl font-semibold text-slate-900">
-              What this means
-            </h2>
-            <p className="mt-3 max-w-3xl text-slate-600">
-              This rating is generated from community annotations and votes.
-              Higher confidence means the community has added more consistent
-              evidence.
-            </p>
-          </section>
-        )}
+        <section className="rounded-3xl border border-slate-200 p-6">
+          <h2 className="text-xl font-semibold text-slate-900">
+            Community Annotations
+          </h2>
+ 
+          {annotations.length > 0 ? (
+            <div className="mt-4 space-y-4">
+              {annotations.map((annotation, index) => (
+                <div
+                  key={index}
+                  className="rounded-2xl border border-slate-200 bg-white p-4"
+                >
+                  <p className="font-medium text-slate-900">
+                    {annotation.category.charAt(0).toUpperCase() +
+                    annotation.category.slice(1)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Timestamp: {formatTimestamp(annotation.timestamp_seconds)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-slate-600">No annotations yet.</p>
+          )}
+        </section>
       </div>
     </main>
   );
