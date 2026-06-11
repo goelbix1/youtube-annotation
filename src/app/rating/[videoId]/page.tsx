@@ -1,8 +1,15 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { FormEvent, use, useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  getDocs,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 
 type VideoData = {
   estimated_rating?: string;
@@ -26,6 +33,10 @@ export default function RatingPage({
   const [loading, setLoading] = useState(true);
   const [videoData, setVideoData] = useState<VideoData | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [category, setCategory] = useState("violence");
+  const [timestampSeconds, setTimestampSeconds] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadVideo() {
@@ -60,7 +71,44 @@ export default function RatingPage({
 
     loadVideo();
   }, [videoId]);
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  setSubmitError(null);
 
+  const parsedSeconds = Number(timestampSeconds);
+
+  if (!Number.isFinite(parsedSeconds) || parsedSeconds < 0) {
+    setSubmitError("Enter a valid timestamp.");
+    return;
+  }
+
+  setSubmitting(true);
+
+  try {
+    await addDoc(collection(db, "annotations"), {
+      video_id: videoId,
+      category,
+      timestamp_seconds: Math.floor(parsedSeconds),
+      created_at: serverTimestamp(),
+    });
+
+    setCategory("violence");
+    setTimestampSeconds("");
+
+    const annotationsSnap = await getDocs(collection(db, "annotations"));
+    const items = annotationsSnap.docs
+      .map((doc) => doc.data() as Annotation)
+      .filter((annotation) => annotation.video_id === videoId)
+      .sort((a, b) => a.timestamp_seconds - b.timestamp_seconds);
+
+    setAnnotations(items);
+  } catch (error) {
+    console.error("Failed to add annotation:", error);
+    setSubmitError("Could not save annotation.");
+  } finally {
+    setSubmitting(false);
+  }
+}
   if (loading) {
     return (
       <main className="min-h-screen bg-white px-6 py-16">
@@ -171,6 +219,56 @@ function formatTimestamp(seconds: number) {
             <p className="mt-4 text-slate-600">No annotations yet.</p>
           )}
         </section>
+        <section className="rounded-3xl border border-slate-200 p-6">
+  <h2 className="text-xl font-semibold text-slate-900">
+    Add Annotation
+  </h2>
+
+  <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
+    <div>
+      <label className="block text-sm font-medium text-slate-700">
+        Category
+      </label>
+      <select
+        className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none"
+        value={category}
+        onChange={(event) => setCategory(event.target.value)}
+      >
+        <option value="violence">Violence</option>
+        <option value="language">Language</option>
+        <option value="scary">Scary</option>
+        <option value="sexual">Sexual</option>
+        <option value="drugs">Drugs</option>
+      </select>
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-slate-700">
+        Timestamp in seconds
+      </label>
+      <input
+        className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none"
+        type="number"
+        min="0"
+        step="1"
+        value={timestampSeconds}
+        onChange={(event) => setTimestampSeconds(event.target.value)}
+      />
+    </div>
+
+    {submitError ? (
+      <p className="text-sm text-red-600">{submitError}</p>
+    ) : null}
+
+    <button
+      className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+      type="submit"
+      disabled={submitting}
+    >
+      {submitting ? "Saving..." : "Submit Annotation"}
+    </button>
+  </form>
+</section>
       </div>
     </main>
   );
